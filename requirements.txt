@@ -1,0 +1,34 @@
+# System related
+build
+gcsfs
+pyyaml
+types-pyyaml
+
+# Scipy stack
+numpy
+matplotlib
+scikit-learn
+pandas
+
+# Deep learning
+torch
+torchvision
+tensorboard
+torch-tb-profiler
+
+# GCP
+google-cloud-storage
+
+# Others
+tqdm
+
+# Testing
+pytest
+pytest-cov
+pytest-mock
+
+# Formatiing, linting
+mypy
+pylint
+black
+isort
