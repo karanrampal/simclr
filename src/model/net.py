@@ -20,10 +20,9 @@ class Net(tnn.Module):
         """
         super().__init__()
 
-        self.base = models.resnet18(pretrained=False, num_classes=4*params.hidden_dim)
-        self.fc = tnn.Sequential(
-            tnn.ReLU(inplace=True),
-            tnn.Linear(4*params.hidden_dim, params.hidden_dim)
+        self.base = models.resnet18(pretrained=False, num_classes=4 * params.hidden_dim)
+        self.mlp = tnn.Sequential(
+            tnn.ReLU(inplace=True), tnn.Linear(4 * params.hidden_dim, params.hidden_dim)
         )
         self.dropout_rate = params.dropout
 
@@ -34,7 +33,7 @@ class Net(tnn.Module):
         Returns:
             Embeddings
         """
-        return self.fc(self.base(x_inp))
+        return self.mlp(self.base(x_inp))
 
 
 def loss_fn(outputs: torch.Tensor, params: Params) -> torch.Tensor:
@@ -45,10 +44,12 @@ def loss_fn(outputs: torch.Tensor, params: Params) -> torch.Tensor:
     Returns:
         loss for all the inputs in the batch
     """
-    cos_sim = F.cosine_similarity(outputs[:,None,:], outputs[None,:,:], dim=-1)
+    cos_sim = tnn.functional.cosine_similarity(
+        outputs[:, None, :], outputs[None, :, :], dim=-1
+    )
     mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
-    cos_sim.masked_fill_(self_mask, -9e15)
-    pos_mask = mask.roll(shifts=cos_sim.shape[0]//2, dims=0)
+    cos_sim.masked_fill_(mask, -9e15)
+    pos_mask = mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
     cos_sim = cos_sim / params.temperature
     loss = -cos_sim[pos_mask] + torch.logsumexp(cos_sim, dim=-1)
     return loss.mean()
