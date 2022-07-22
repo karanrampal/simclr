@@ -11,7 +11,7 @@ scikit-learn
 pandas
 
 # Deep learning
-torch
+torch == 1.11
 torchvision
 tensorboard
 torch-tb-profiler

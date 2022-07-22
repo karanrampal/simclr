@@ -16,7 +16,7 @@ dependencies:
   - scikit-learn
   - pandas
   # Deep learning
-  - pytorch
+  - pytorch=1.11
   - torchvision
   - cudatoolkit=11.3  # 'cudatoolkit=11.3' if you have a gpu else 'cpuonly'
   - tensorboard
