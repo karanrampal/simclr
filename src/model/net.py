@@ -1,7 +1,6 @@
 """Define the Network, loss and metrics"""
 
-from functools import partial
-from typing import Callable, Dict
+from typing import Callable, Dict, Tuple
 
 import torch
 import torch.nn as tnn
@@ -24,7 +23,6 @@ class Net(tnn.Module):
         self.mlp = tnn.Sequential(
             tnn.ReLU(inplace=True), tnn.Linear(4 * params.hidden_dim, params.hidden_dim)
         )
-        self.dropout_rate = params.dropout
 
     def forward(self, x_inp: torch.Tensor) -> torch.Tensor:
         """Defines the forward propagation through the network
@@ -36,6 +34,22 @@ class Net(tnn.Module):
         return self.mlp(self.base(x_inp))
 
 
+def _calc_similarity(outputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute the similarity given outputs
+    Args:
+        outputs: Logits of network forward pass
+    Returns:
+        Similarity and index of positive labels
+    """
+    sim = tnn.functional.cosine_similarity(
+        outputs[:, None, :], outputs[None, :, :], dim=-1
+    )
+    mask = torch.eye(sim.shape[0], dtype=torch.bool, device=sim.device)
+    sim.masked_fill_(mask, -9e15)
+    pos_mask = mask.roll(shifts=sim.shape[0] // 2, dims=0)
+    return sim, pos_mask
+
+
 def loss_fn(outputs: torch.Tensor, params: Params) -> torch.Tensor:
     """Compute the loss given outputs
     Args:
@@ -44,15 +58,26 @@ def loss_fn(outputs: torch.Tensor, params: Params) -> torch.Tensor:
     Returns:
         loss for all the inputs in the batch
     """
-    cos_sim = tnn.functional.cosine_similarity(
-        outputs[:, None, :], outputs[None, :, :], dim=-1
-    )
-    mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
-    cos_sim.masked_fill_(mask, -9e15)
-    pos_mask = mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
-    cos_sim = cos_sim / params.temperature
-    loss = -cos_sim[pos_mask] + torch.logsumexp(cos_sim, dim=-1)
+    sim, pos_mask = _calc_similarity(outputs)
+    sim = sim / params.temperature
+    loss = -sim[pos_mask] + torch.logsumexp(sim, dim=-1)
     return loss.mean()
+
+
+def acc_topk(outputs: torch.Tensor, params: Params) -> torch.Tensor:
+    """Get the top k accuracy
+    Args:
+        outputs: Logits of network forward pass
+        params: Hyperparameters
+    Returns:
+        Top k accuracy
+    """
+    sim, pos_mask = _calc_similarity(outputs)
+    combined = torch.cat(
+        [sim[pos_mask][:, None], sim.masked_fill(pos_mask, -9e15)], dim=-1
+    )
+    inds = combined.argsort(dim=-1, descending=True).argmin(dim=-1)
+    return (inds < params.topk).float().mean()
 
 
 def avg_acc_gpu(outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -115,13 +140,9 @@ def confusion_matrix(
     return conf_mat.sum(1, keepdim=True)
 
 
-def get_metrics(params: Params) -> Dict[str, Callable]:
-    """Returns a dictionary of all the metrics to be used
-    Args:
-        params: Hyperparameters
-    """
+def get_metrics() -> Dict[str, Callable]:
+    """Returns a dictionary of all the metrics to be used"""
     metrics: Dict[str, Callable] = {
-        "accuracy": avg_acc_gpu,
-        "f1-score": partial(avg_f1_score_gpu, num_classes=params.num_classes),
+        "top_k_accuracy": acc_topk,
     }
     return metrics
