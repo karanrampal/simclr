@@ -168,7 +168,7 @@ def train(
             labels = labels.detach()
 
             summary_batch = {
-                metric: metrics[metric](output_batch, labels) for metric in metrics
+                metric: metrics[metric](output_batch, params) for metric in metrics
             }
             summary_batch["loss"] = loss.detach()
             if params.distributed:
@@ -316,7 +316,7 @@ def main() -> None:
         )
 
     criterion = loss_fn
-    metrics = get_metrics(params)
+    metrics = get_metrics()
 
     logging.info("Starting training for %d epoch(s)", params.num_epochs)
     train_and_evaluate(

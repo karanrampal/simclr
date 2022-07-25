@@ -103,7 +103,7 @@ def evaluate(
             loss = criterion(output, labels)
 
             summary_batch = {
-                metric: metrics[metric](output, labels) for metric in metrics
+                metric: metrics[metric](output, params) for metric in metrics
             }
             summary_batch["loss"] = loss.detach()
             if params.distributed:
@@ -156,7 +156,7 @@ def main() -> None:
         model = DistributedDataParallel(model, device_ids=[params.local_rank])
 
     criterion = loss_fn
-    metrics = get_metrics(params)
+    metrics = get_metrics()
 
     logging.info("Starting evaluation")
 
