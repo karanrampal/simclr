@@ -1,82 +1,62 @@
 """Define custom dataset class extending the Pytorch Dataset class"""
 
-import os
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-import pandas as pd
 import torch
 import torchvision.transforms as tvt
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
+from torchvision.datasets import STL10
 
 from utils.utils import Params
 
 
-class AttributePreddataset(Dataset):
-    """Custom class for Attribute prediction dataset
+class ContrastiveTransforms:
+    """Contrastive transform class to create a list of batches
     Args:
-        root: Directory containing the dataset
-        file_path: Path of the train/val/test file relative to the root
-        transforms: Data augmentation to be done
+        transforms: Data augmentations
+        num : Number of branches of data input to the model
+    Returns:
+        List of tensors
     """
 
-    def __init__(
-        self,
-        root: str,
-        file_path: str,
-        transforms: Optional[Callable] = None,
-    ) -> None:
-        self.root = root
-        self.data = pd.read_csv(os.path.join(root, file_path))
+    def __init__(self, transforms: tvt.Compose, num: int = 2) -> None:
         self.transforms = transforms
+        self.num = num
 
-        tmp = self.data[["labels", "product_fit"]].drop_duplicates()
-        self.categories = dict(zip(tmp.labels, tmp.product_fit))
+    def __call__(self, x_inp: torch.Tensor) -> List[torch.Tensor]:
+        """Apply the transforms and return a list of 'num' batches"""
+        return [self.transforms(x_inp) for i in range(self.num)]
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Get an item from the dataset given the index idx"""
-        row = self.data.iloc[idx]
-
-        im_name = row["path"]
-        im_path = os.path.join(self.root, "images", im_name)
-        img = Image.open(im_path).convert("RGB")
-
-        labels = torch.as_tensor(row["labels"], dtype=torch.int64)
-
-        if self.transforms is not None:
-            img = self.transforms(img)
-
-        return img, labels
-
-    def __len__(self) -> int:
-        """Length of the dataset"""
-        return len(self.data)
+    def __repr__(self) -> str:
+        return f"Number of input branches: {self.num}"
 
 
-def get_transform(is_train: bool, params: Params) -> tvt.Compose:
+def get_transform(params: Params) -> tvt.Compose:
     """Data augmentation
     Args:
-        is_train: If the dataset is training
         params: Hyperparameters
     Returns:
         Composition of all the data transforms
     """
     trans = [
-        tvt.Resize((params.height, params.width)),
+        tvt.RandomHorizontalFlip(),
+        tvt.RandomResizedCrop(size=params.size),
+        tvt.RandomApply(
+            [
+                tvt.ColorJitter(
+                    brightness=params.brightness,
+                    contrast=params.contrast,
+                    saturation=params.saturation,
+                    hue=params.hue,
+                )
+            ],
+            p=params.jitter,
+        ),
+        tvt.RandomGrayscale(p=params.gray_scale),
+        tvt.GaussianBlur(kernel_size=params.blur),
         tvt.ToTensor(),
-        tvt.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        tvt.Normalize((0.5,), (0.5,)),
     ]
-    if is_train:
-        trans += [
-            tvt.RandomHorizontalFlip(params.flip),
-            tvt.ColorJitter(
-                brightness=params.brightness,
-                contrast=params.contrast,
-                saturation=params.saturation,
-                hue=params.hue,
-            ),
-            tvt.RandomRotation(params.degree),
-        ]
     return tvt.Compose(trans)
 
 
@@ -92,22 +72,25 @@ def get_dataloader(
         DataLoader object for each mode
     """
     dataloaders = {}
+    transforms = get_transform(params)
 
     for mode in modes:
         if mode == "train":
             ds_dict = {
-                "file_path": "annotations/train.csv",
-                "transforms": get_transform(True, params),
+                "split": "unlabeled",
+                "download": True,
+                "transforms": ContrastiveTransforms(transforms),
             }
             shuffle = not params.distributed
         else:
             ds_dict = {
-                "file_path": "annotations/test.csv",
-                "transforms": get_transform(False, params),
+                "file_path": "train",
+                "download": True,
+                "transforms": ContrastiveTransforms(transforms),
             }
             shuffle = False
 
-        dataset = AttributePreddataset(root=params.data_dir, **ds_dict)
+        dataset = STL10(root=params.data_dir, **ds_dict)
         if params.distributed:
             sampler: Optional[DistributedSampler] = DistributedSampler(
                 dataset,
@@ -126,6 +109,7 @@ def get_dataloader(
             num_workers=params.num_workers,
             pin_memory=params.pin_memory,
             shuffle=shuffle,
+            drop_last=mode == "train",
         )
 
         dataloaders[mode] = (d_l, sampler)
