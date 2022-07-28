@@ -24,20 +24,20 @@ def args_parser() -> argparse.Namespace:
     parser.add_argument(
         "-d",
         "--data_dir",
-        default="/gcs/hm-images-bucket",
+        default="./data",
         type=str,
         help="Directory containing the dataset",
     )
     parser.add_argument(
         "-m",
         "--model_dir",
-        default="/gcs/attribute-models-bucket/fit-model",
+        default="./experiments/base_model",
         type=str,
         help="Directory containing model",
     )
     parser.add_argument(
         "--tb_log_dir",
-        default=os.getenv("AIP_TENSORBOARD_LOG_DIR"),
+        default="./experiments/base_model/logs",
         type=str,
         help="TensorBoard summarywriter directory",
     )
@@ -61,8 +61,10 @@ def args_parser() -> argparse.Namespace:
         default=os.environ.get("RANK", 0),
         help="Identifier for each node",
     )
-    parser.add_argument("--height", default=224, type=int, help="Image height")
-    parser.add_argument("-w", "--width", default=224, type=int, help="Image width")
+    parser.add_argument("--hidden_dim", default=128, type=int, help="Hidden dimension")
+    parser.add_argument(
+        "--temperature", default=0.07, type=float, help="Softmax temperature"
+    )
     parser.add_argument("--batch_size", default=256, type=int, help="Batch size")
     parser.add_argument(
         "--num_workers", default=2, type=int, help="Number of workers to load data"
@@ -73,8 +75,9 @@ def args_parser() -> argparse.Namespace:
         type=bool,
         help="Pin memory for faster load on GPU",
     )
-    parser.add_argument("--num_classes", default=9, type=int, help="Number of classes")
-    parser.add_argument("--dropout", default=0.5, type=float, help="Dropout rate")
+    parser.add_argument(
+        "--topk", default=1, type=int, help="Value of K for Top K accuracy"
+    )
     parser.add_argument(
         "--learning_rate", default=0.001, type=float, help="Learning rate"
     )
@@ -91,36 +94,38 @@ def args_parser() -> argparse.Namespace:
     parser.add_argument("--num_epochs", default=10, type=int, help="Number of epochs")
 
     # Augmentation related arguments
-    parser.add_argument(
-        "-f", "--flip", default=0.5, type=float, help="Probability to flip image"
-    )
+    parser.add_argument("--size", default=96, type=int, help="Random crop size")
     parser.add_argument(
         "-b",
         "--brightness",
-        default=0.3,
+        default=0.5,
         type=float,
         help="Brightness level for augmentation",
     )
     parser.add_argument(
         "-c",
         "--contrast",
-        default=1.5,
+        default=0.5,
         type=float,
         help="Contrast level for augmentation",
     )
     parser.add_argument(
         "-s",
         "--saturation",
-        default=1.5,
+        default=0.5,
         type=float,
         help="Saturation level for augmentation",
     )
     parser.add_argument(
-        "--hue", default=0.0, type=float, help="Hue level for augmentation"
+        "--hue", default=0.1, type=float, help="Hue level for augmentation"
     )
     parser.add_argument(
-        "--degree", default=1.5, type=float, help="Degree level for augmentation"
+        "--jitter", default=0.8, type=float, help="Probability of jittering"
     )
+    parser.add_argument(
+        "--gray_scale", default=0.2, type=float, help="Probability of gray scale"
+    )
+    parser.add_argument("--blur", default=9, type=int, help="Blurring kernel size")
     return parser.parse_args()
 
 
@@ -150,13 +155,13 @@ def train(
     model.train()
     summ = []
 
-    for i, (train_batch, labels) in enumerate(dataloader):
+    for i, (train_batch, _) in enumerate(dataloader):
+        train_batch = torch.cat(train_batch, dim=0)
         if params.cuda:
             train_batch = train_batch.to(params.device)
-            labels = labels.to(params.device)
 
         output_batch = model(train_batch)
-        loss = criterion(output_batch, labels)
+        loss = criterion(output_batch, params)
 
         optimizer.zero_grad()
         loss.backward()
@@ -165,7 +170,6 @@ def train(
 
         if i % params.save_summary_steps == 0:
             output_batch = output_batch.detach()
-            labels = labels.detach()
 
             summary_batch = {
                 metric: metrics[metric](output_batch, params) for metric in metrics
@@ -271,7 +275,7 @@ def main() -> None:
     args = args_parser()
     params = utils.Params(vars(args))
 
-    writer = SummaryWriter(params.tb_log_dir.replace("gs://", "/gcs/"))
+    writer = SummaryWriter(params.tb_log_dir)
 
     params.cuda = torch.cuda.is_available()
     utils.setup_distributed(params)
@@ -295,7 +299,6 @@ def main() -> None:
     logging.info("- done.")
 
     model: Union[DistributedDataParallel, torch.nn.Module] = Net(params)
-    writer.add_graph(model, next(iter(train_dl))[0])
     if params.cuda:
         model = model.to(params.device)
     if params.distributed:

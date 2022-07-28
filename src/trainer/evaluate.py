@@ -22,17 +22,17 @@ def args_parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_dir",
-        default="/gcs/hm-images-bucket",
+        default="./data",
         help="Directory containing the dataset",
     )
     parser.add_argument(
         "--model_dir",
-        default="/gcs/attribute-models-bucket/fit-model",
+        default="./experiments/base_model",
         help="Directory containing model",
     )
     parser.add_argument(
         "--tb_log_dir",
-        default=os.getenv("AIP_TENSORBOARD_LOG_DIR"),
+        default="../experiments/base_model/logs",
         type=str,
         help="TensorBoard summarywriter directory",
     )
@@ -54,8 +54,10 @@ def args_parser() -> argparse.Namespace:
         default=os.environ.get("RANK", 0),
         help="Identifier for each node",
     )
-    parser.add_argument("--height", default=224, type=int, help="Image height")
-    parser.add_argument("-w", "--width", default=224, type=int, help="Image width")
+    parser.add_argument("--hidden_dim", default=128, type=int, help="Hidden dimension")
+    parser.add_argument(
+        "--temperature", default=0.07, type=float, help="Softmax temperature"
+    )
     parser.add_argument("--batch_size", default=128, type=int, help="Batch size")
     parser.add_argument(
         "--num_workers", default=2, type=int, help="Number of workers to load data"
@@ -66,8 +68,9 @@ def args_parser() -> argparse.Namespace:
         type=bool,
         help="Pin memory for faster load on GPU",
     )
-    parser.add_argument("--num_classes", default=9, type=int, help="Number of classes")
-    parser.add_argument("--dropout", default=0.5, type=float, help="Dropout rate")
+    parser.add_argument(
+        "--topk", default=1, type=int, help="Value of K for Top K accuracy"
+    )
     return parser.parse_args()
 
 
@@ -94,13 +97,13 @@ def evaluate(
     summ = []
 
     with torch.no_grad():
-        for i, (inp_data, labels) in enumerate(dataloader):
+        for i, (inp_data, _) in enumerate(dataloader):
+            inp_data = torch.cat(inp_data, dim=0)
             if params.cuda:
                 inp_data = inp_data.to(params.device)
-                labels = labels.to(params.device)
 
             output = model(inp_data)
-            loss = criterion(output, labels)
+            loss = criterion(output, params)
 
             summary_batch = {
                 metric: metrics[metric](output, params) for metric in metrics
@@ -126,7 +129,7 @@ def main() -> None:
     args = args_parser()
     params = utils.Params(vars(args))
 
-    writer = SummaryWriter(params.tb_log_dir.replace("gs://", "/gcs/"))
+    writer = SummaryWriter(params.tb_log_dir)
 
     params.cuda = torch.cuda.is_available()
     utils.setup_distributed(params)
@@ -149,7 +152,6 @@ def main() -> None:
     logging.info("- done.")
 
     model: Union[DistributedDataParallel, torch.nn.Module] = Net(params)
-    writer.add_graph(model, next(iter(test_dl))[0])
     if params.cuda:
         model = model.to(params.device)
     if params.distributed:
