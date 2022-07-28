@@ -79,14 +79,14 @@ def get_dataloader(
             ds_dict = {
                 "split": "unlabeled",
                 "download": True,
-                "transforms": ContrastiveTransforms(transforms),
+                "transform": ContrastiveTransforms(transforms),
             }
             shuffle = not params.distributed
         else:
             ds_dict = {
-                "file_path": "train",
+                "split": "train",
                 "download": True,
-                "transforms": ContrastiveTransforms(transforms),
+                "transform": ContrastiveTransforms(transforms),
             }
             shuffle = False
 
