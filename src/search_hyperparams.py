@@ -42,7 +42,7 @@ def launch_training_job(
     json_path = os.path.join(model_dir, "params.json")
     params.save(json_path)
 
-    cmd = f"{PYTHON} train.py --model_dir={model_dir} --data_dir {data_dir}"
+    cmd = f"{PYTHON} -m trainer.train --model_dir={model_dir} --data_dir {data_dir}"
     print(cmd)
     check_call(cmd, shell=True)
 
@@ -54,7 +54,7 @@ def main() -> None:
 
     configurations = {
         "learning_rate": [0.01, 0.001, 0.0001],
-        "decay": [0.0, 0.01, 0.001],
+        "decay": [0.0, 0.01, 0.001, 0.0001],
     }
     conf_values = list(configurations.values())
     conf_names = list(configurations.keys())
@@ -63,7 +63,7 @@ def main() -> None:
         conf = dict(zip(conf_names, vals))
         params.update(conf)
 
-        name = "_".join(str(key) + str(val) for key, val in conf.items())
+        name = "_".join(key + str(val) for key, val in conf.items())
         job_name = f"params_{name}"
         launch_training_job(args.parent_dir, args.data_dir, job_name, params)
 
