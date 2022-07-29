@@ -34,6 +34,7 @@ src/
         __init__.py
         vis_utils.py
         utils.py
+    search_hyperparams.py
 tests/
     __init__.py
     test_metrics.yp
@@ -66,6 +67,14 @@ pip install <path to wheel file>
 Then to start training on a single node with multiple gpu's we can do the following,
 ```
 python -m trainer.train --args1 --args2
+```
+For multi-node training, run the following,
+```
+torchrun --nnodes {num_total_nodes} --nproc_per_node {num_total_gpus} --rdzv_endpoint $MASTER_ADDR:$MASTER_PORT train.py --args1 --args2
+```
+For hyper-parameter search you can use the following script,
+```
+python src/search_hyperparams.py --args1 --args2
 ```
 
 ## Requirements
