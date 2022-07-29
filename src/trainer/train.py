@@ -81,7 +81,7 @@ def args_parser() -> argparse.Namespace:
     parser.add_argument(
         "--learning_rate", default=0.001, type=float, help="Learning rate"
     )
-    parser.add_argument("--decay", default=0.0, type=float, help="Decay rate")
+    parser.add_argument("--decay", default=0.0001, type=float, help="Decay rate")
     parser.add_argument(
         "--policy", default="steps", type=str, help="Learning rate scheduler"
     )
@@ -243,7 +243,7 @@ def train_and_evaluate(
             model, criterion, val_dataloader, metrics, params, writer, epoch
         )
 
-        val_acc = val_metrics.get("f1-score", 0.0)
+        val_acc = val_metrics.get("top_k_accuracy", 0.0)
         is_best = val_acc > best_val_acc
 
         if params.rank == 0:
