@@ -79,11 +79,11 @@ def args_parser() -> argparse.Namespace:
         "--topk", default=1, type=int, help="Value of K for Top K accuracy"
     )
     parser.add_argument(
-        "--learning_rate", default=0.001, type=float, help="Learning rate"
+        "--learning_rate", default=0.0005, type=float, help="Learning rate"
     )
     parser.add_argument("--decay", default=0.0001, type=float, help="Decay rate")
     parser.add_argument(
-        "--policy", default="steps", type=str, help="Learning rate scheduler"
+        "--policy", default="cosine", type=str, help="Learning rate scheduler"
     )
     parser.add_argument(
         "--steps", default=[5, 10], help="Steps for learning rate scheduler"
@@ -91,7 +91,7 @@ def args_parser() -> argparse.Namespace:
     parser.add_argument(
         "--save_summary_steps", default=100, type=int, help="Save after number of steps"
     )
-    parser.add_argument("--num_epochs", default=10, type=int, help="Number of epochs")
+    parser.add_argument("--num_epochs", default=100, type=int, help="Number of epochs")
 
     # Augmentation related arguments
     parser.add_argument("--size", default=96, type=int, help="Random crop size")
@@ -314,8 +314,11 @@ def main() -> None:
             )
         )
     else:
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer, gamma=0.9, verbose=True
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=params.num_epochs,
+            eta_min=params.learning_rate / 50,
+            verbose=True,
         )
 
     criterion = loss_fn
