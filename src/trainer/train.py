@@ -67,7 +67,7 @@ def args_parser() -> argparse.Namespace:
     )
     parser.add_argument("--batch_size", default=256, type=int, help="Batch size")
     parser.add_argument(
-        "--num_workers", default=2, type=int, help="Number of workers to load data"
+        "--num_workers", default=0, type=int, help="Number of workers to load data"
     )
     parser.add_argument(
         "--pin_memory",
